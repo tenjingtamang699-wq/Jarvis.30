@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>JARVIS Mark 7 - Ultimate Architect</title>
+    <style>
+        :root { --theme: #00f2ff; --glow: rgba(0, 242, 255, 0.4); }
+        body { margin: 0; background: #000; color: var(--theme); font-family: 'Orbitron', sans-serif; overflow: hidden; }
+        .combat-mode { --theme: #ff0000; --glow: rgba(255, 0, 0, 0.6); }
+        .combat-mode::after { content: ''; position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 100px var(--theme); animation: pulse 1s infinite; z-index: 1000; }
+        #terminal { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 101; width: 90%; max-width: 700px; display: flex; }
+        input { background: rgba(0,10,20,0.9); border: 2px solid var(--theme); color: var(--theme); padding: 15px; flex-grow: 1; outline: none; font-family: 'Orbitron'; box-shadow: 0 0 10px var(--glow); }
+        button { background: var(--theme); color: #000; border: none; padding: 15px 30px; cursor: pointer; font-weight: bold; }
+        #auth { position: fixed; inset: 0; background: #000; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.6; } }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="auth">
+        <h2 style="letter-spacing: 5px;">BIOMETRIC AUTHORIZATION</h2>
+        <input type="password" id="key" placeholder="Paste Gemini API Key..." style="width: 300px; margin-bottom: 20px; text-align:center;">
+        <button onclick="startSystem()">ENGAGE</button>
+    </div>
+    <div id="terminal">
+        <input type="text" id="in" placeholder="Say: 'Combat Mode' or 'Make a laptop on a table'">
+        <button onclick="run()">EXECUTE</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        let group = new THREE.Group();
+        scene.add(group);
+        camera.position.set(0, 5, 10);
+        camera.lookAt(0,0,0);
+
+        // LASER SCANNER
+        const laserGeo = new THREE.PlaneGeometry(20, 0.1);
+        const laserMat = new THREE.MeshBasicMaterial({ color: 0x00f2ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+        const laser = new THREE.Mesh(laserGeo, laserMat);
+        laser.rotation.x = Math.PI/2;
+        scene.add(laser);
+
+        let API_KEY = "";
+        let combat = false;
+
+        window.startSystem = () => {
+            API_KEY = document.getElementById('key').value;
+            document.getElementById('auth').style.display = 'none';
+            speak("Systems online. Laser scanners calibrated.");
+        };
+
+        window.run = async () => {
+            const cmd = document.getElementById('in').value;
+            if(!cmd) return;
+            if(cmd.toLowerCase().includes("combat")) { combat = true; document.body.classList.add('combat-mode'); laser.material.color.set(0xff0000); }
+            
+            // Start Laser Scan Animation
+            laser.position.y = 5;
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ contents: [{ parts: [{ text: `You are JARVIS. User is Sir. Return ONLY JSON for objects: [SCAN]{"parts": [{"type": "box", "scale": [2,0.1,2], "pos": [0,0,0]}]}[/SCAN]. Request: ${cmd}` }]}]})
+            });
+            const data = await res.json();
+            const reply = data.candidates[0].content.parts[0].text;
+            const match = reply.match(/\[SCAN\]([\s\S]*?)\[\/SCAN\]/);
+            if(match) {
+                const blueprint = JSON.parse(match[1]);
+                group.clear();
+                blueprint.parts.forEach(p => {
+                    const m = new THREE.Mesh(new THREE.BoxGeometry(...p.scale), new THREE.MeshBasicMaterial({color: combat?0xff0000:0x00f2ff, wireframe:true}));
+                    m.position.set(...p.pos);
+                    group.add(m);
+                });
+            }
+            speak("Scanning complete, Sir.");
+        };
+
+        function speak(t) { window.speechSynthesis.speak(new SpeechSynthesisUtterance(t)); }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(laser.position.y > -2) laser.position.y -= 0.05; // Laser movement
+            group.rotation.y += combat ? 0.05 : 0.01;
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
